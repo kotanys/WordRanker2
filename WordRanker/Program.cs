@@ -11,7 +11,7 @@ var computer = new Computer();
 var perf = new PerfCounter(CounterWrite);
 perf.Start();
 
-var task = computer.Compute(anagrams, new ParallelOptions { MaxDegreeOfParallelism = 20 });
+var task = computer.StartCompute(anagrams, new ParallelOptions { MaxDegreeOfParallelism = 20 });
 using var writer = new StreamWriter(GlobalConfiguration.OutputFile);
 
 while (!task.IsCompleted || !computer.Results.IsEmpty)
@@ -29,7 +29,7 @@ string CounterWrite()
     var b = new StringBuilder();
     b.Append(computer.Counter);
     b.Append(" / ");
-    b.Append(anagrams.Count.ToString());
+    b.Append(anagrams.Count);
     return b.ToString();
 }
 

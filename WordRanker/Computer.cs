@@ -9,27 +9,20 @@ internal class Computer
     public int Counter => _counter;
     public ConcurrentQueue<List<WordNode>> Results { get; private set; } = [];
 
-    public async Task Compute(IEnumerable<Anagram> anagrams, ParallelOptions options)
+    public async Task StartCompute(IEnumerable<Anagram> anagrams, ParallelOptions options)
     {
-        var possiblePlaces = new ConcurrentStack<int>(Enumerable.Range(0, options.MaxDegreeOfParallelism));
         var list = anagrams.OrderBy(a => a.Mask).ToList();
 
-        await Task.Run(() => Parallel.ForEach(anagrams, options,
-        GetLocalInit(),
-        GetBody(list),
-        GetLocalFinally()));
+        await Task.Run(() => Parallel.ForEach(anagrams,
+                                              options,
+                                              LocalInit,
+                                              GetBody(list),
+                                              LocalFinally));
     }
 
-    private Action<ThreadWorkState> GetLocalFinally()
-    {
-        return s =>
-        {
-            Interlocked.Add(ref _counter, s.LocalCounter);
-            Results.Enqueue(s.Nodes ?? throw new InvalidOperationException());
-        };
-    }
+    private static ThreadWorkState LocalInit() => new(Nodes: [], LocalCounter: 0);
 
-    private Func<Anagram, ParallelLoopState, ThreadWorkState, ThreadWorkState> GetBody(List<Anagram> list)
+    private static Func<Anagram, ParallelLoopState, ThreadWorkState, ThreadWorkState> GetBody(List<Anagram> list)
     {
         return (a, state, s) =>
         {
@@ -51,12 +44,10 @@ internal class Computer
         };
     }
 
-    private static Func<ThreadWorkState> GetLocalInit()
+    private void LocalFinally(ThreadWorkState s)
     {
-        return () =>
-        {
-            return (Nodes: [], LocalCounter: 0);
-        };
+        Interlocked.Add(ref _counter, s.LocalCounter);
+        Results.Enqueue(s.Nodes ?? throw new InvalidOperationException());
     }
 }
 
