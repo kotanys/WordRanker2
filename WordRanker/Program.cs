@@ -3,26 +3,33 @@ using WordRanker;
 
 const int BitsPerLetter = 10;
 
-var words = File.ReadAllLines(args.Length > 0 ? args[0] : "WordLists/words_alpha.txt").Where(w => w.Length >= 3);
+var words = File.ReadAllLines(args.Length > 0 ? args[0] : GlobalConfiguration.InputFile).Where(w => w.Length >= 3);
 List<Anagram> anagrams = ComputeAnagramList(words);
 
-var computer = new Computer();
 
-var cts = new CancellationTokenSource();
-var task = computer.ComputeAsync(anagrams);
-task.ContinueWith(t => cts.Cancel());
+var computer = new Computer();
 var perf = new PerfCounter(CounterWrite);
-await perf.Start(cts.Token);
-WriteOutput(task.Result);
+perf.Start();
+
+var task = computer.Compute(anagrams, new ParallelOptions { MaxDegreeOfParallelism = 20 });
+using var writer = new StreamWriter(GlobalConfiguration.OutputFile);
+
+while (!task.IsCompleted || !computer.Results.IsEmpty)
+{
+    if (computer.Results.TryDequeue(out var results))
+        WriteOutput(results, writer);
+}
+
+perf.WriteNow();
+perf.Stop();
+await writer.FlushAsync();
 
 string CounterWrite()
 {
     var b = new StringBuilder();
     b.Append(computer.Counter);
     b.Append(" / ");
-    b.Append(anagrams.Count);
-    b.Append(", Graph length = ");
-    b.Append(computer.GraphLength);
+    b.Append(anagrams.Count.ToString());
     return b.ToString();
 }
 
@@ -102,32 +109,12 @@ static List<Anagram> ComputeAnagramList(IEnumerable<string> words)
     return anagrams;
 }
 
-static void WriteOutput(List<WordNode> words)
+static void WriteOutput(List<WordNode> words, StreamWriter writer)
 {
-    Dictionary<Anagram, HashSet<Anagram>> writeFormat = [];
-    foreach (var word in words)
+    foreach (var node in words)
     {
-        var flatten = new HashSet<Anagram>();
-        writeFormat.Add(word.Anagram, flatten);
-        Recurse(writeFormat, flatten, word);
-    }
-
-    static void Recurse(Dictionary<Anagram, HashSet<Anagram>> writeFormat, HashSet<Anagram> flatten, WordNode node)
-    {
-        foreach (var child in node.Children.Concat(node.IndirectChildren))
-        {
-            flatten.Add(child.Anagram);
-
-            var flatten1 = new HashSet<Anagram>();
-            writeFormat.TryAdd(child.Anagram, flatten1);
-            Recurse(writeFormat, flatten1, child);
-            flatten.UnionWith(flatten1);
-        }
-    }
-
-    using StreamWriter writer = new("../../../output.txt");
-    foreach ((Anagram word, HashSet<Anagram> children) in writeFormat.OrderBy((kv) => kv.Key))
-    {
+        var word = node.Anagram;
+        var children = node.Children;
         writer.Write("{");
         writer.Write(word);
         writer.Write("}: ");

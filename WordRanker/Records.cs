@@ -2,9 +2,7 @@
 
 public record WordNode(Anagram Anagram)
 {
-    //public List<WordNode> Parents { get; init; } = [];
     public List<WordNode> Children { get; init; } = [];
-    public List<WordNode> IndirectChildren { get; init; } = [];
 
     public override string ToString()
     {
@@ -15,11 +13,6 @@ public record WordNode(Anagram Anagram)
 public record Anagram(List<string> Words, Int384 Mask) : IComparable<Anagram>
 {
     public int Length => Words[0].Length;
-
-    public bool CanMake(Anagram what)
-    {
-        return (Mask | what.Mask) <= Mask;
-    }
 
     public override string ToString()
     {

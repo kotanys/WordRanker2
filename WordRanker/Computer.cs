@@ -1,65 +1,74 @@
-﻿namespace WordRanker;
+﻿using System.Collections.Concurrent;
 
-public class Computer
+namespace WordRanker;
+
+internal class Computer
 {
-    private int _counter = 0;
-    private LinkedList<WordNode> _graph = [];
+    private int _counter;
 
-    public int GraphLength => _graph.Count;
     public int Counter => _counter;
+    public ConcurrentQueue<List<WordNode>> Results { get; private set; } = [];
 
-    public List<WordNode> Compute(IEnumerable<Anagram> anagrams)
+    public async Task Compute(IEnumerable<Anagram> anagrams, ParallelOptions options)
     {
-        _graph = [];
-        var sorted = anagrams.OrderBy(x => x.Mask).ToArray();
-        foreach (Anagram word in sorted)
-        {
-            var node = new WordNode(word);
-            bool addToEnd = true;
-            var linkedListNode = _graph.First;
-            while (linkedListNode is not null)
-            {
-                var next = linkedListNode.Next;
-                if (node.Anagram.CanMake(linkedListNode.Value.Anagram))
-                {
-                    node.Children.Add(linkedListNode.Value);
-                    _graph.Remove(linkedListNode);
-                }
-                else
-                {
-                    Recurse(linkedListNode.Value.Children, node);
-                }
-                linkedListNode = next;
-            }
+        var possiblePlaces = new ConcurrentStack<int>(Enumerable.Range(0, options.MaxDegreeOfParallelism));
+        var list = anagrams.OrderBy(a => a.Mask).ToList();
 
-            if (addToEnd)
-            {
-                _graph.AddLast(node);
-            }
-            _counter++;
-        }
-        return _graph.ToList();
+        await Task.Run(() => Parallel.ForEach(anagrams, options,
+        GetLocalInit(),
+        GetBody(list),
+        GetLocalFinally()));
     }
 
-    private static void Recurse(List<WordNode> children, WordNode node)
+    private Action<ThreadWorkState> GetLocalFinally()
     {
-        var word = node.Anagram;
-        foreach (var item in children)
+        return s =>
         {
-            if (word.CanMake(item.Anagram))
-            {
-                node.IndirectChildren.Add(item);
-            }
-            else
-            {
-                Recurse(item.Children, node);
-            }
-        }
+            Interlocked.Add(ref _counter, s.LocalCounter);
+            Results.Enqueue(s.Nodes ?? throw new InvalidOperationException());
+        };
     }
 
-    public async Task<List<WordNode>> ComputeAsync(IEnumerable<Anagram> anagrams)
+    private Func<Anagram, ParallelLoopState, ThreadWorkState, ThreadWorkState> GetBody(List<Anagram> list)
     {
-        var task = Task.Run(() => Compute(anagrams));
-        return await task;
+        return (a, state, s) =>
+        {
+            var node = new WordNode(a);
+            foreach (var b in list)
+            {
+                if (b.Mask >= a.Mask)
+                {
+                    break;
+                }
+                if ((a.Mask | b.Mask) == a.Mask)
+                {
+                    node.Children.Add(new WordNode(b));
+                }
+            }
+            s.LocalCounter++;
+            s.Nodes.Add(node);
+            return s;
+        };
+    }
+
+    private static Func<ThreadWorkState> GetLocalInit()
+    {
+        return () =>
+        {
+            return (Nodes: [], LocalCounter: 0);
+        };
+    }
+}
+
+internal record struct ThreadWorkState(List<WordNode> Nodes, int LocalCounter)
+{
+    public static implicit operator (List<WordNode> Nodes, int LocalCounter)(ThreadWorkState value)
+    {
+        return (value.Nodes, value.LocalCounter);
+    }
+
+    public static implicit operator ThreadWorkState((List<WordNode> Nodes, int LocalCounter) value)
+    {
+        return new ThreadWorkState(value.Nodes, value.LocalCounter);
     }
 }
