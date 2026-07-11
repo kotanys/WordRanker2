@@ -11,7 +11,8 @@ var computer = new Computer();
 var perf = new PerfCounter(CounterWrite);
 perf.Start();
 
-var task = computer.StartCompute(anagrams, new ParallelOptions { MaxDegreeOfParallelism = 20 });
+var task = computer.StartCompute(anagrams,
+    new ParallelOptions { MaxDegreeOfParallelism = GlobalConfiguration.MaxDegreeOfParallelism });
 using var writer = new StreamWriter(GlobalConfiguration.OutputFile);
 
 while (!task.IsCompleted || !computer.Results.IsEmpty)
